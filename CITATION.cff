@@ -1,0 +1,54 @@
+cff-version: 1.2.0
+message: "If you use TinyEngram in teaching or research, please cite this repository."
+title: "TinyEngram: A Test-Driven Course on Conditional Memory"
+abstract: "A ten-lab, test-driven course that implements DeepSeek Engram conditional memory from scratch: tokenizer compression, multi-head n-gram hashing, retrieval, context gating, short convolution, TinyLM training, sparsity allocation, host offload, and mechanistic analysis."
+version: 0.1.0
+date-released: 2026-10-22
+license: MIT
+repository-code: "https://github.com/colorful-lollipop/tinyengram"
+url: "https://github.com/colorful-lollipop/tinyengram"
+keywords:
+  - large language models
+  - conditional memory
+  - Engram
+  - n-gram
+  - mixture of experts
+  - sparsity
+  - PyTorch
+  - education
+authors:
+  - name: "TinyEngram contributors"
+references:
+  - type: article
+    title: "Conditional Memory via Scalable Lookup: A New Axis of Sparsity for Large Language Models"
+    authors:
+      - family-names: "Cheng"
+        given-names: "Xin"
+      - family-names: "Zeng"
+        given-names: "Wangding"
+      - family-names: "Dai"
+        given-names: "Damai"
+      - family-names: "Chen"
+        given-names: "Qinyu"
+      - family-names: "Wang"
+        given-names: "Bingxuan"
+      - family-names: "Xie"
+        given-names: "Zhenda"
+      - family-names: "Huang"
+        given-names: "Kezhao"
+      - family-names: "Yu"
+        given-names: "Xingkai"
+      - family-names: "Hao"
+        given-names: "Zhewen"
+      - family-names: "Li"
+        given-names: "Yukun"
+      - family-names: "Zhang"
+        given-names: "Han"
+      - family-names: "Zhang"
+        given-names: "Huishuai"
+      - family-names: "Zhao"
+        given-names: "Dongyan"
+      - family-names: "Liang"
+        given-names: "Wenfeng"
+    year: 2026
+    url: "https://github.com/deepseek-ai/Engram"

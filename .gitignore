@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Experiments / checkpoints / datasets
+.runs/
+data/
+*.pt
+*.pth
+*.bin
+*.ckpt
+*.safetensors
+*.log
+*.pdf
+!Engram_paper.pdf
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+.ipynb_checkpoints/
+
+# Local env
+.env
+.env.*

@@ -1,0 +1,60 @@
+name: Feature request
+description: Propose a new lab, experiment, integration, or documentation improvement.
+title: "[Feature] "
+labels: ["enhancement", "needs triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        TinyEngram is a teaching project. The strongest proposals connect a concept to a
+        runnable exercise and a measurable outcome.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What is missing or confusing today? Who benefits?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed change
+      description: What should be added or changed? Include API sketches if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: How can it be validated?
+      description: Tests, metrics, expected numbers, or a comparison against the paper.
+      placeholder: "A property test that ... / an experiment that reports mean±std over 3 seeds"
+    validations:
+      required: true
+  - type: dropdown
+    id: scope
+    attributes:
+      label: Scope
+      options:
+        - New lab / major feature
+        - Experiment
+        - Documentation
+        - Performance / systems
+        - Tooling / CI
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I have read CONTRIBUTING.md.
+          required: true
+        - label: This is not a request to reproduce the full 27B paper on a single GPU.
+          required: true
