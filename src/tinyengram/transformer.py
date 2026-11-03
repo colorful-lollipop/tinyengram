@@ -22,6 +22,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .config import TinyLMConfig
+from .cache import KVCache
 from .engram import Engram, build_engram_mapping
 from .gating import RMSNorm
 
@@ -33,9 +34,8 @@ __all__ = [
     "Block",
     "TinyLM",
     "count_parameters",
+    "KVCache",
 ]
-
-KVCache = list[tuple[torch.Tensor, torch.Tensor]]
 
 
 class RotaryEmbedding(nn.Module):
@@ -86,7 +86,10 @@ class Block(nn.Module):
         cache: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
         position_offset: int = 0,
         context_ids: Optional[torch.Tensor] = None,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        *,
+        conv_state: Optional[torch.Tensor] = None,
+        return_state: bool = False,
+    ):
         raise NotImplementedError("TODO(L5): 请实现本关卡的核心逻辑；先读 docs/ 对应讲义")
 
 
@@ -111,7 +114,10 @@ class TinyLM(nn.Module):
         position_offset: int = 0,
         context_ids: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor], KVCache]:
-        """Returns ``(logits, loss, new_caches)``."""
+        """Return (logits, loss, KVCache); cache also keeps Engram conv state.
+
+        See docs/decode-state.md for the state invariant and rollback examples.
+        """
         raise NotImplementedError("TODO(L5): 请实现本关卡的核心逻辑；先读 docs/ 对应讲义")
 
     def engram_modules(self) -> list[Engram]:

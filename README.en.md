@@ -1,5 +1,10 @@
 # TinyEngram
 
+New here? Start with the [beginner guide](docs/start-here.md) (Chinese, including
+Windows PowerShell steps), then run `python scripts/hello_engram.py` for a CPU-only
+walkthrough. It checks greedy outputs and both KV/Engram convolution state without
+requiring weights or filling the student exercises.
+
 **Implement DeepSeek Engram conditional memory from scratch — retrieval, gating, training, inference, and systems optimization — one test-driven lab at a time.**
 
 [简体中文](README.md) | English

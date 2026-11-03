@@ -57,9 +57,7 @@ def parse_counts(output: str) -> tuple[int, int, int]:
 
 def run_files(files: list[str], impl: str, include_slow: bool):
     cmd = [sys.executable, "-m", "pytest", *files, "-q", "--tb=line", "-p", "no:cacheprovider"]
-    if not include_slow:
-        cmd += ["-m", "not slow"]
-    cmd += ["-m", "not gpu"]
+    cmd += ["-m", "not gpu" if include_slow else "not slow and not gpu"]
     env = os.environ.copy()
     env["TINYENGRAM_IMPL"] = impl
     proc = subprocess.run(cmd, cwd=ROOT, env=env, capture_output=True, text=True)
@@ -83,7 +81,7 @@ def first_error(output: str) -> str:
     return ""
 
 
-def main() -> None:
+def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--solution", action="store_true", help="用 solutions/ 里的参考实现评分")
     ap.add_argument("--stage", type=int, help="只跑某一关")
@@ -114,7 +112,9 @@ def main() -> None:
             print(f"L{stage:<3}{name:<30}{'SKIP':<8}{'需要 --all':<16}")
             continue
         files = [path] + [f for s, f in EXTRA if s == stage]
-        status, output, passed, failed, skipped = run_files(files, impl, args.all)
+        status, output, passed, failed, skipped = run_files(
+            files, impl, args.all or args.stage == stage,
+        )
         total_pass += passed
         total_fail += failed
         total_skip += skipped
@@ -142,7 +142,8 @@ def main() -> None:
     if args.verbose:
         for stage, output in failed_outputs:
             print(f"\n===== L{stage} =====\n{output[-3000:]}")
+    return 1 if failed_outputs else 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

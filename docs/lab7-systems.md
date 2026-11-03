@@ -216,7 +216,13 @@ logits, _, caches = model(
 )
 ```
 
-`out` 是完整序列。也可以只保留最后 `N-1` 个 token（省内存），但 `position_offset` 仍然要传绝对位置。
+`out` 是完整序列。也可以只传“本轮输入 + 前 `N-1` 个 token”，
+但 `position_offset` 仍然要传绝对位置。实现会在哈希前裁剪 token 历史，并只查新位置的表行。
+
+还需要独立保存 ShortConv 的 gated 激活历史：长度为
+`(kernel_size-1) * dilation`，不能用 token ID 历史替代。
+模型返回的 `KVCache` 同时携带每层 KV 与卷积状态，拒绝回滚必须恢复两者。
+详见 [解码状态图解](decode-state.md) 与 `tests/test_decode_state.py`。
 
 测试 `test_cached_generation_matches_naive_greedy` 检查两种解码结果逐 token 相同。
 

@@ -53,21 +53,11 @@ class SpeculativeResult:
         }
 
 
-def _crop(caches: KVCache, length: int) -> KVCache:
+def _crop(caches: KVCache, length: int, conv_states=None) -> KVCache:
     # TinyLM stores [B * hc_mult, heads, time, head_dim]. Never mutate views.
+    if isinstance(caches, KVCache):
+        return caches.crop(length, conv_states=conv_states)
     return [(k[..., :length, :], v[..., :length, :]) for k, v in caches]
-
-
-def _check_model(model: TinyLM) -> None:
-    for engram in model.engram_modules():
-        # context_ids restores n-gram history, NOT hidden-dependent conv state.
-        # Earlier taps must be zero; the last tap sees only the current token.
-        weight = engram.short_conv.conv.weight
-        if bool(torch.count_nonzero(weight[..., :-1])):
-            raise ValueError(
-                "Temporal ShortConv needs activation-state caching/rollback; "
-                "use conv_kernel_size=1 (or zero past taps) for this experiment"
-            )
 
 
 @torch.no_grad()
@@ -113,8 +103,6 @@ def greedy_speculative_generate(
     end = input_ids.shape[1] + max_new_tokens
     if end > min(target.cfg.max_seq, draft.cfg.max_seq):
         raise ValueError("prompt + max_new_tokens exceeds model max_seq")
-    _check_model(target)
-    _check_model(draft)
     target.eval()
     draft.eval()
     out = input_ids.to(device).clone()
@@ -130,6 +118,9 @@ def greedy_speculative_generate(
         k = min(draft_length, end - length)
         proposal_context = out
         proposals = []
+        # The draft runs K separate forwards. Save bounded conv snapshots so
+        # rejection can roll back farther than the convolution's ring size.
+        draft_states = [d_cache.conv_states] if isinstance(d_cache, KVCache) else None
         for _ in range(k):
             token = d_logits[:, -1].argmax(-1, keepdim=True)
             proposals.append(token)
@@ -139,6 +130,8 @@ def greedy_speculative_generate(
                 context_ids=proposal_context,
             )
             result.draft_calls += 1
+            if draft_states is not None:
+                draft_states.append(d_cache.conv_states)
         proposed = torch.cat(proposals, dim=1)
         verified, _, t_cache = target(
             proposed, caches=t_cache, position_offset=length, context_ids=proposal_context,
@@ -161,7 +154,8 @@ def greedy_speculative_generate(
         out = torch.cat([out, kept], dim=1)
         # Roll back both speculative KV suffixes, including unused EOS suffixes.
         t_cache = _crop(t_cache, length + accepted)
-        d_cache = _crop(d_cache, length + accepted)
+        d_cache = _crop(d_cache, length + accepted,
+                        None if draft_states is None else draft_states[accepted])
         if not stopped and out.shape[1] < end:
             # First mismatch -> target correction; all accepted -> target bonus.
             token = predictions[:, accepted : accepted + 1]

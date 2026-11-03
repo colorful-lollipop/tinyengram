@@ -1,5 +1,8 @@
 # 讲义导读
 
+第一次运行请先看 [新手入口](start-here.md)；缓存与投机回滚的概念解释见
+[解码状态图解](decode-state.md)。想先看效果可运行 `python scripts/hello_engram.py`。
+
 这十篇讲义按「一个部件 → 一个可验证性质 → 一个系统后果」组织。建议**按顺序读**，因为后面的关卡默认你理解前面的形状和接口。
 
 > English overview: [`README.en.md`](../README.en.md) ｜ 术语表：[`glossary.md`](glossary.md) ｜ 常见问题：[`faq.md`](faq.md)

@@ -82,19 +82,52 @@ prompt 本身带 EOS 不停止生成，与单请求 `generate` 约定一致。�
 最终短块也计入统计。空 prompt、batch>1、越界 token、不同词表大小、跨设备、
 超出任意模型 max_seq 都会报错。词表语义必须由调用者保证相同，大小相同不足以证明语义相同。
 
-## Engram 的状态边界
+## Engram 的状态支持
 
-`context_ids` 为哈希提供前面的 n-gram token，**没有提供 ShortConv 的历史激活**。
-ShortConv 的输入取决于每层 hidden state 和 gate，不能仅靠历史 token 和注意力 KV
-直接恢复。参考实现的 `generate` 同样没有缓存这份卷积状态。
+当前实现同时缓存注意力 KV 和 ShortConv 的门控激活历史，支持非零的历史卷积 tap。
+`context_ids` 只负责 n-gram token 历史，不能替代激活状态。默认 `--conv-kernel 1`
+便于对照初版；加 `--conv-kernel 4 --draft-engram` 即可运行时间卷积版本。
 
-因此实验明确检查目标和草稿：只支持 `conv_kernel_size=1`，或所有历史卷积 tap
-权重精确为零的配置。默认零初始化卷积在未训练时可用，但训练后一般不再满足；
-检测到非零历史 tap 就报错。测试中的 Engram 使用**非零单点卷积**和多分支残差，
-确保没有因零初始化把整个模块的正确性问题掩盖掉。
+每层保存最近 H=(kernel_size-1)×dilation 个 gated 激活。目标一次验证 chunk 的中间
+回滚使用“旧 H 个＋本轮新激活”，草稿逐 token 的回滚使用每一步的小状态快照。
+缓存是请求自己的对象，仍可用 `cache[i]` 读取 `(K,V)`，但不能转换为普通 list。
+原理、内存边界和失败提示见 [解码状态图解](decode-state.md)。
 
-后续若接入完整的已训练 Engram，需要给每层、每分支增加卷积激活环形缓存，并把它
-与注意力 KV 一起提交/回滚；相关性质测试也必须使用非零历史 tap。
+初版只支持单点或零历史 tap 的限制已解除；[初版实测](experiment-speculative-results.md)
+仍保留当时的设置和源码指纹，不应把它当成新版的时延或时间卷积结论。
+
+## 需要历史的 recall 任务
+
+`--task recall` 使用无需外部数据的单绑定拷贝任务：
+
+```text
+prompt:   [key, v1,v2,v3,v4, noise..., QUERY, key]
+response: [v1,v2,v3,v4, EOS]
+```
+
+payload、key、noise 都随机生成。两个 prompt 可以最近后缀相同，但早期 payload 不同，
+因此不能仅靠最近一个 token 答对。这仍是合成拷贝任务，不是语言能力或多实体检索基准。
+训练只对四个值及 EOS 计算 loss；prompt 长度在 7..32 间变化。
+评估使用独立随机流。长度 96 超出训练长度，报告时应单独标明位置/距离外推。
+
+```bash
+TINYENGRAM_IMPL=solutions python experiments/exp6_speculative.py \
+  --task recall --pair trained --steps 400 --prompts 8 \
+  --prompt-lengths 8 32 96 --draft-lengths 1 2 4 \
+  --repeats 3 --warmup 1 --output .runs/recall-plain.json
+
+TINYENGRAM_IMPL=solutions python experiments/exp6_speculative.py \
+  --task recall --pair trained --steps 400 --prompts 8 \
+  --draft-engram --conv-kernel 4 --prompt-lengths 8 32 96 \
+  --draft-lengths 1 2 4 --repeats 3 --warmup 1 \
+  --output .runs/recall-temporal-engram.json
+```
+
+recall 默认只输出 5 token，cycle 默认输出 32；也可以显式指定 `--new-tokens`。
+JSON 额外保存预期回复及目标/草稿**独立解码**的回复 token 准确率（包括 EOS，
+若只输出不足 5 token 则只统计已生成部分）。投机输出与目标一致，
+不等于目标把任务答对：两者要分别报告。小模型在距离外推时失败，也是有效结果。
+当前没有蒸馏，也没有对齐两草稿的参数量，不把该对照解释为架构的最终优劣。
 
 ## 指标和代价
 
@@ -130,7 +163,7 @@ outputs_per_round = r + 1
 
 [test_speculative.py](../tests/test_speculative.py) 包含真实独立 TinyLM 与同权重控制，
 草拟长度 1/2/4/8、prompt 长度 1/7/37，普通/Engram、多分支模型；并覆盖零输出预算、
-最后短块、EOS、非法输入和时间卷积拒绝。位置可控的 TinyLM 测试强制首位、中途、
+最后短块、EOS、非法输入和非零时间卷积状态。位置可控的 TinyLM 测试强制首位、中途、
 末位拒绝和全接受，但仍实际计算注意力与 Engram 的 K/V。
 
 审计 hook 在**每轮**将目标和草稿分别对已提交序列完整重算，并逐层检查实际 K/V
@@ -173,6 +206,9 @@ top-k/top-p 等处理必须计入**实际抽样分布**并正确归一化。还�
 | 可研究假设 | Engram 若能以足够低的成本提高目标分布拟合度，可能改善投机性价比 |
 | 尚未验证 | DSpark 特征输入、Kimi K3 权重/激活提取、平均接受 4–5 token、长上下文接受率、Ascend/GPU 加速 |
 
-prompt 从 4 增至 96 只是在小模型上检查上下文长度扫描，且任务不需要远距离历史；
-不能当成长上下文接受率研究。下一步应先换成需要历史信息的任务/语料，区分草稿
-能力不足、位置外推、上下文截断与状态错误，再讨论 K3 和 Engram/DSpark 架构创新。
+cycle 的 4..96 长度扫描不需要远距离历史。recall 增加了对历史 payload 的依赖，
+但仍只是小模型合成拷贝实验。要讨论 K3 或 DSpark，需要再区分草稿能力、位置外推、
+上下文截断与状态错误，不能将这里的接受长度直接迁移到真实大模型。
+
+新版的全部配置结果及局部查表对照见 [优化后实测](decode-state-results.md)。
+首次运行与 Windows 命令见 [新手入口](start-here.md)。

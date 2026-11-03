@@ -21,6 +21,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from .config import TinyLMConfig
+from .cache import KVCache
 from .engram import Engram, build_engram_mapping
 from .gating import RMSNorm
 
@@ -32,9 +33,8 @@ __all__ = [
     "Block",
     "TinyLM",
     "count_parameters",
+    "KVCache",
 ]
-
-KVCache = list[tuple[torch.Tensor, torch.Tensor]]
 
 
 class RotaryEmbedding(nn.Module):
@@ -173,9 +173,17 @@ class Block(nn.Module):
         cache: Optional[tuple[torch.Tensor, torch.Tensor]] = None,
         position_offset: int = 0,
         context_ids: Optional[torch.Tensor] = None,
-    ) -> tuple[torch.Tensor, tuple[torch.Tensor, torch.Tensor]]:
+        *,
+        conv_state: Optional[torch.Tensor] = None,
+        return_state: bool = False,
+    ):
+        window = None
         if self.engram is not None:
-            hidden = hidden + self.engram(hidden, input_ids, context_ids=context_ids)
+            contribution, window = self.engram(
+                hidden, input_ids, context_ids=context_ids,
+                conv_state=conv_state, return_state=True,
+            )
+            hidden = hidden + contribution
 
         normed = torch.stack(
             [self.norm1[i](hidden[:, :, i, :]) for i in range(self.hc_mult)], dim=2
@@ -193,7 +201,7 @@ class Block(nn.Module):
             .permute(0, 2, 1, 3)
         )
         hidden = hidden + ffn_out
-        return hidden, new_cache
+        return (hidden, new_cache, window) if return_state else (hidden, new_cache)
 
 
 class TinyLM(nn.Module):
@@ -228,20 +236,49 @@ class TinyLM(nn.Module):
         position_offset: int = 0,
         context_ids: Optional[torch.Tensor] = None,
     ) -> tuple[torch.Tensor, Optional[torch.Tensor], KVCache]:
-        """Returns ``(logits, loss, new_caches)``."""
+        """Return logits, loss and list-compatible KVCache including conv state.
+
+        Cached Engram input needs context_ids with T new + min(offset,N-1)
+        IDs. Keep position_offset absolute even when token history is bounded.
+        """
         b, t = input_ids.shape
+        if caches is not None:
+            if len(caches) != len(self.blocks):
+                raise ValueError("caches must have one entry per layer")
+            if any(k.shape[-2] != position_offset or v.shape[-2] != position_offset
+                   for k, v in caches):
+                raise ValueError("position_offset must equal cache length")
+            if self.cfg.engram is not None:
+                needed = t + min(position_offset, self.cfg.engram.max_ngram_size - 1)
+                if context_ids is None or context_ids.shape[1] < needed:
+                    raise ValueError("context_ids must include new IDs and preceding n-gram history")
+                if not isinstance(caches, KVCache) and any(
+                    m.history_size > 0 for m in self.engram_modules()
+                ):
+                    raise ValueError("use KVCache: plain list loses Engram conv history")
         hidden = self.tok_emb(input_ids).unsqueeze(2).expand(-1, -1, self.cfg.hc_mult, -1)
-        new_caches: KVCache = []
+        pairs, windows, history_sizes = [], [], []
         for i, block in enumerate(self.blocks):
             cache = caches[i] if caches is not None else None
-            hidden, kv = block(
+            state = caches.conv_states[i] if isinstance(caches, KVCache) else None
+            if caches is not None and block.engram is not None and block.engram.history_size:
+                expected = min(position_offset, block.engram.history_size)
+                if state is None or state.shape[1] != expected:
+                    raise ValueError("missing or incomplete Engram conv state")
+            hidden, kv, window = block(
                 hidden,
                 input_ids,
                 cache=cache,
                 position_offset=position_offset,
                 context_ids=context_ids,
+                conv_state=state,
+                return_state=True,
             )
-            new_caches.append(kv)
+            pairs.append(kv)
+            windows.append(window)
+            history_sizes.append(block.engram.history_size if block.engram is not None else 0)
+        new_caches = KVCache(pairs, conv_windows=windows, history_sizes=history_sizes,
+                             chunk_start=position_offset)
         hidden = self.norm_f(hidden).mean(dim=2)
         logits = self.lm_head(hidden)
         loss = None

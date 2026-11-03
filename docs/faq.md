@@ -141,7 +141,9 @@ token id × 乘数 可能接近 2^63。int32 会溢出。项目里所有 hash id
 
 ### KV cache 下为什么 logits 对不上？
 
-Engram 需要前 `N-1` 个 token。只传新 token 会让 hash 用 pad 补齐。传 `context_ids=out`（完整序列或最后 N-1 个 token）。详见 lab5。
+Engram 需要前 `N-1` 个 token。传 `context_ids=out`（完整序列或“本轮输入 + 前 N−1 个 ID”）。
+另外要保留模型返回的完整缓存对象，其中还包含 ShortConv 激活历史；仅保存注意力 KV 不够。
+详见 [解码状态图解](decode-state.md)。
 
 ### 为什么 `slots_per_head` 要取素数？
 

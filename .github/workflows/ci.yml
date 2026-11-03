@@ -42,6 +42,9 @@ jobs:
       - name: Docs consistency
         run: python scripts/check_docs.py
 
+      - name: Beginner CPU walkthrough
+        run: python scripts/hello_engram.py
+
       - name: Reference implementation (fast)
         env:
           TINYENGRAM_IMPL: solutions
