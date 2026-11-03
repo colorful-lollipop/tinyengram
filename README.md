@@ -225,6 +225,12 @@ python scripts/grade.py
 合成任务：多 token 实体名 → 固定属性 token。脚本如实报告 baseline 与 Engram 的
 train/heldout loss；规模太小，不保证 Engram 一定赢。这一关训练的是**实验诚实性**。
 
+**投机解码扩展实验**：[`experiments/exp6_speculative.py`](experiments/exp6_speculative.py)
+用两个 TinyLM 完成贪心多 token 草拟、并行验证与双 KV/context 回滚，比较普通 KV 解码
+的正确性、接受长度及端到端时延。复现命令、Engram 卷积状态限制和采样扩展见
+[`docs/experiment-speculative.md`](docs/experiment-speculative.md)。这是小模型机制实验，
+不代表 Kimi K3 或 DSpark 的收益。
+
 ---
 
 ## 参考实现
