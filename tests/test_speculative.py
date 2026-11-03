@@ -155,7 +155,7 @@ def test_invalid_requests_fail_early(ids, n, k):
 
 
 @pytest.mark.parametrize("bad_role", ["target", "draft"])
-def test_temporal_shortconv_is_explicitly_unsupported(bad_role):
+def test_temporal_shortconv_is_supported(bad_role):
     from tinyengram.conv import ShortConv
 
     target, draft = build(0, True), build(1, True)
@@ -163,8 +163,11 @@ def test_temporal_shortconv_is_explicitly_unsupported(bad_role):
     bad.engram_modules()[0].short_conv = ShortConv(
         16, groups=2, kernel_size=4, dilation=3, zero_init=False,
     )
-    with pytest.raises(ValueError, match="Temporal ShortConv"):
-        greedy_speculative_generate(target, draft, torch.tensor([[1, 2]]), 5)
+    ids = torch.tensor([[1, 2]])
+    out = greedy_speculative_generate(
+        target, draft, ids, 5, on_commit=audit(target, draft, []),
+    )
+    assert torch.equal(out.ids, naive_generate(target, ids, 5))
 
 
 def test_zero_temporal_taps_remain_supported():

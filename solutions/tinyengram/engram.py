@@ -107,19 +107,25 @@ class Engram(nn.Module):
     def dmem(self) -> int:
         return self.memory.dmem
 
+    @property
+    def history_size(self) -> int:
+        """Number of earlier gated activations required by ShortConv."""
+        return (self.short_conv.kernel_size - 1) * self.short_conv.dilation
+
     def compress(self, input_ids: torch.Tensor) -> torch.Tensor:
         if self.compressed_tokenizer is None:
             return input_ids
         return self.compressed_tokenizer.compress(input_ids)
 
     def _ids(self, input_ids: torch.Tensor, context_ids: Optional[torch.Tensor]) -> torch.Tensor:
-        """Compress the *full* context; hashing needs the preceding tokens."""
+        """Compress only the new input plus N-1 preceding raw token IDs."""
         ids = self.compress(input_ids)
         if context_ids is None:
             return ids
         if context_ids.shape[0] != input_ids.shape[0] or context_ids.shape[1] < input_ids.shape[1]:
             raise ValueError("context_ids 必须同 batch 且不短于 input_ids")
-        context = self.compress(context_ids)
+        width = input_ids.shape[1] + self.cfg.max_ngram_size - 1
+        context = self.compress(context_ids[:, -width:])
         if not torch.equal(context[:, -ids.shape[1] :], ids):
             raise ValueError("input_ids 必须是 context_ids 的末尾切片")
         return context
@@ -128,8 +134,9 @@ class Engram(nn.Module):
         self, input_ids: torch.Tensor, context_ids: Optional[torch.Tensor] = None
     ) -> torch.Tensor:
         """Memory vector ``e_t`` of shape ``[B, T, d_mem]``."""
-        emb = self.memory.retrieve(self._ids(input_ids, context_ids))
-        return emb[:, -input_ids.shape[1] :]
+        hashes = self.memory.hash_ids(self._ids(input_ids, context_ids))
+        # Previous IDs affect the hash, but their embedding rows are not needed.
+        return self.memory.table(hashes[:, -input_ids.shape[1]:]).flatten(-2)
 
     def gates(
         self,
@@ -138,8 +145,7 @@ class Engram(nn.Module):
         context_ids: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         """Per-branch gate values ``[B, T, M]`` (for analysis / visualization)."""
-        ids = self._ids(input_ids, context_ids)
-        emb = self.memory.retrieve(ids)[:, -input_ids.shape[1] :]
+        emb = self.retrieve(input_ids, context_ids)
         out = []
         for m in range(self.cfg.hc_mult):
             key = self.key_projs[m](emb)
@@ -154,13 +160,17 @@ class Engram(nn.Module):
         hidden_states: torch.Tensor,
         input_ids: torch.Tensor,
         context_ids: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        *,
+        conv_state: Optional[torch.Tensor] = None,
+        return_state: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             hidden_states: ``[B, T, M, D]`` multi-branch residual stream.
             input_ids:     ``[B, T]`` raw (or already compressed) ids.
         Returns:
-            ``[B, T, M, D]`` contribution to be *added* to ``hidden_states``.
+            Contribution ``[B,T,M,D]``. With return_state, also return the raw
+            gated activation window (at most H previous + T new activations).
         """
         if hidden_states.dim() != 4:
             raise ValueError(f"hidden_states 应为 [B,T,M,D]，收到 {tuple(hidden_states.shape)}")
@@ -172,8 +182,7 @@ class Engram(nn.Module):
         if input_ids.shape != (b, t):
             raise ValueError(f"input_ids 应为 [B,T]={(b, t)}，收到 {tuple(input_ids.shape)}")
 
-        ids = self._ids(input_ids, context_ids)
-        emb = self.memory.retrieve(ids)[:, -input_ids.shape[1] :]  # [B,T,dmem]
+        emb = self.retrieve(input_ids, context_ids)  # [B,T,dmem]
 
         value = self.value_proj(emb)  # shared W_V
         gated = []
@@ -185,7 +194,16 @@ class Engram(nn.Module):
             gated.append(gate * value)
         u = torch.stack(gated, dim=2)  # [B,T,M,D]
 
-        return u + self.short_conv(u)
+        if conv_state is not None:
+            if (conv_state.ndim != 4 or conv_state.shape[0] != b
+                    or conv_state.shape[2:] != (m, d)
+                    or conv_state.shape[1] > self.history_size):
+                raise ValueError("invalid bounded conv_state shape")
+            window = torch.cat([conv_state, u], dim=1)
+        else:
+            window = u
+        out = u + self.short_conv(window)[:, -t:]
+        return (out, window) if return_state else out
 
     def extra_repr(self) -> str:  # pragma: no cover - cosmetic
         return (

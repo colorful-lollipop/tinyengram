@@ -19,6 +19,10 @@
 > **项目性质**：独立教学项目，不是 DeepSeek-AI 官方实现，也不代表论文作者观点。
 > 论文与代码的版权归原作者；本项目只做教学复现、注释与评论。
 
+**第一次来，先跑一个成功示例：** [新手入口（含 Windows 安装）](docs/start-here.md)
+→ `python scripts/hello_engram.py` → 再选择阅读参考实现或从 L0 做题。
+演示只需要 CPU，不下载模型权重，并会逐轮检查 KV 与卷积历史回滚。
+
 ---
 
 ## 30 秒看懂 Engram
@@ -59,6 +63,10 @@ Engram 把早期层的静态重建卸载掉，等效于给模型增加了深度�
 ---
 
 ## 学习路线
+
+**第一次来？** 先看 [新手入口](docs/start-here.md)，用
+`python scripts/hello_engram.py` 在 CPU 上跑通带缓存审计的投机解码。
+再选择参考实现阅读或 `src/` 做题；Windows PowerShell 安装步骤也在新手入口中。
 
 | 关卡 | 主题 | 你要实现什么 | 验收 | 难度 |
 |---|---|---|---|---|
@@ -227,7 +235,7 @@ train/heldout loss；规模太小，不保证 Engram 一定赢。这一关训练
 
 **投机解码扩展实验**：[`experiments/exp6_speculative.py`](experiments/exp6_speculative.py)
 用两个 TinyLM 完成贪心多 token 草拟、并行验证与双 KV/context 回滚，比较普通 KV 解码
-的正确性、接受长度及端到端时延。复现命令、Engram 卷积状态限制和采样扩展见
+的正确性、接受长度及端到端时延。复现命令、Engram 卷积状态与回滚和采样扩展见
 [`docs/experiment-speculative.md`](docs/experiment-speculative.md)。这是小模型机制实验，
 不代表 Kimi K3 或 DSpark 的收益。
 

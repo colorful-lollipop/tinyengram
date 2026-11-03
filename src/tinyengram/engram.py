@@ -64,13 +64,18 @@ class Engram(nn.Module):
     def dmem(self) -> int:
         return self.memory.dmem
 
+    @property
+    def history_size(self) -> int:
+        """Earlier gated activations required by the dilated ShortConv."""
+        return (self.short_conv.kernel_size - 1) * self.short_conv.dilation
+
     def compress(self, input_ids: torch.Tensor) -> torch.Tensor:
         if self.compressed_tokenizer is None:
             return input_ids
         return self.compressed_tokenizer.compress(input_ids)
 
     def _ids(self, input_ids: torch.Tensor, context_ids: Optional[torch.Tensor]) -> torch.Tensor:
-        """Compress the *full* context; hashing needs the preceding tokens."""
+        """Compress only input + N-1 preceding IDs (see docs/decode-state.md)."""
         raise NotImplementedError("TODO(L4): 请实现本关卡的核心逻辑；先读 docs/ 对应讲义")
 
     def retrieve(
@@ -94,13 +99,17 @@ class Engram(nn.Module):
         hidden_states: torch.Tensor,
         input_ids: torch.Tensor,
         context_ids: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
+        *,
+        conv_state: Optional[torch.Tensor] = None,
+        return_state: bool = False,
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         Args:
             hidden_states: ``[B, T, M, D]`` multi-branch residual stream.
             input_ids:     ``[B, T]`` raw (or already compressed) ids.
         Returns:
-            ``[B, T, M, D]`` contribution to be *added* to ``hidden_states``.
+            Contribution [B,T,M,D]; with return_state, also raw gated history
+            + current chunk for transactional conv rollback. See decode-state.md.
         """
         raise NotImplementedError("TODO(L4): 请实现本关卡的核心逻辑；先读 docs/ 对应讲义")
 
